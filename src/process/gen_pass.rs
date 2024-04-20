@@ -51,7 +51,7 @@ pub fn process_gen_pass(
     println!("{}", final_password);
 
     let estimate = zxcvbn(&final_password, &[]).unwrap();
-    println!("{}", estimate.score()); // 3
+    eprintln!("{}", estimate.score());
 
     Ok(())
 }
