@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rand::seq::SliceRandom;
+use zxcvbn::zxcvbn;
 
 const UPPER_CASE: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LOWER_CASE: &[u8] = b"abcdefghijkmnopqrstuvwxyz";
@@ -46,6 +47,11 @@ pub fn process_gen_pass(
 
     password.shuffle(&mut rng);
 
-    println!("{}", String::from_utf8(password)?);
+    let final_password = String::from_utf8(password)?;
+    println!("{}", final_password);
+
+    let estimate = zxcvbn(&final_password, &[]).unwrap();
+    println!("{}", estimate.score()); // 3
+
     Ok(())
 }
