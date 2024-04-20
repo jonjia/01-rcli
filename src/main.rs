@@ -1,13 +1,16 @@
 use anyhow::Result;
 use clap::Parser;
-use rcli::{process_csv, process_gen_pass, Opts, SubCommand};
+use rcli::{
+    process_csv, process_decode, process_encode, process_gen_pass, Base64SubCommand, Opts,
+    SubCommand,
+};
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
         SubCommand::Csv(opts) => {
-            let output = if let Some(output) = opts.output {
-                output.clone()
+            let output = if let Some(o) = opts.output {
+                o.clone()
             } else {
                 format!("output.{}", opts.format)
             };
@@ -20,6 +23,14 @@ fn main() -> Result<()> {
             opts.number,
             opts.symbol,
         )?,
+        SubCommand::Base64(subcmd) => match subcmd {
+            Base64SubCommand::Encode(opts) => {
+                process_encode(&opts.input, opts.format)?;
+            }
+            Base64SubCommand::Decode(opts) => {
+                process_decode(&opts.input, opts.format)?;
+            }
+        },
     }
 
     Ok(())
