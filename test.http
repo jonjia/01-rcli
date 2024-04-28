@@ -1,3 +1,7 @@
 
 ### test index
 GET http://0.0.0.0:8080/fixtures/ed25519.pk
+
+
+### test static file with tower-http
+GET http://localhost:8080/tower/Cargo.toml
