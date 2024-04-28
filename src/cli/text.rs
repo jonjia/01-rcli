@@ -3,12 +3,14 @@ use std::{fs, path::PathBuf, str::FromStr};
 
 use anyhow::Ok;
 use clap::Parser;
+use enum_dispatch::enum_dispatch;
 
 use crate::{process_generate, process_sign, process_verify, CmdExecutor};
 
 use super::{parse_input_file, parse_path};
 
 #[derive(Debug, Parser)]
+#[enum_dispatch(CmdExecutor)]
 pub enum TextSubCommand {
     #[command(about = "Sign a message with a private/public key")]
     Sign(TextSignOpts),
@@ -124,16 +126,6 @@ impl CmdExecutor for TextKeyGenerateOpts {
                 fs::write(name.join("ed25519.pk"), &key[1])?;
                 Ok(())
             }
-        }
-    }
-}
-
-impl CmdExecutor for TextSubCommand {
-    async fn execute(self) -> anyhow::Result<()> {
-        match self {
-            TextSubCommand::Sign(opts) => opts.execute().await,
-            TextSubCommand::Verify(opts) => opts.execute().await,
-            TextSubCommand::Generate(opts) => opts.execute().await,
         }
     }
 }
