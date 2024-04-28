@@ -1,6 +1,7 @@
 mod base64;
 mod csv;
 mod genpass;
+mod http;
 mod text;
 
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use clap::Parser;
 
 pub use base64::{Base64Format, Base64SubCommand};
 pub use csv::OutputFormat;
+pub use http::HttpSubCommand;
 pub use text::{TextSignFormat, TextSubCommand};
 
 use self::csv::CsvOpts;
@@ -34,6 +36,9 @@ pub enum SubCommand {
 
     #[command(subcommand)]
     Text(TextSubCommand),
+
+    #[command(subcommand)]
+    Http(HttpSubCommand),
 }
 
 fn parse_input_file(filename: &str) -> Result<String, &'static str> {
