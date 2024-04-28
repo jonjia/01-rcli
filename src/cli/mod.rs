@@ -13,6 +13,8 @@ pub use csv::OutputFormat;
 pub use http::HttpSubCommand;
 pub use text::{TextSignFormat, TextSubCommand};
 
+use crate::CmdExecutor;
+
 use self::csv::CsvOpts;
 use self::genpass::GenPassOpts;
 
@@ -31,14 +33,26 @@ pub enum SubCommand {
     #[command(name = "genpass", about = "Generate a password")]
     GenPass(GenPassOpts),
 
-    #[command(subcommand)]
+    #[command(subcommand, about = "Base64 encode/decode")]
     Base64(Base64SubCommand),
 
-    #[command(subcommand)]
+    #[command(subcommand, about = "Text sign/verify")]
     Text(TextSubCommand),
 
-    #[command(subcommand)]
+    #[command(subcommand, about = "Http server")]
     Http(HttpSubCommand),
+}
+
+impl CmdExecutor for SubCommand {
+    async fn execute(self) -> anyhow::Result<()> {
+        match self {
+            SubCommand::Csv(opts) => opts.execute().await,
+            SubCommand::GenPass(opts) => opts.execute().await,
+            SubCommand::Base64(cmd) => cmd.execute().await,
+            SubCommand::Text(cmd) => cmd.execute().await,
+            SubCommand::Http(cmd) => cmd.execute().await,
+        }
+    }
 }
 
 fn parse_input_file(filename: &str) -> Result<String, &'static str> {
