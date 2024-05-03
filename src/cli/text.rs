@@ -1,6 +1,6 @@
 use crate::{
-    get_content, get_reader, process_text_key_generate, process_text_sign, process_text_verify,
-    CmdExecutor,
+    get_content, get_reader, process_text_decrypt, process_text_encrypt, process_text_key_generate,
+    process_text_sign, process_text_verify, CmdExecutor,
 };
 
 use super::{parse_input_file, parse_path};
@@ -19,6 +19,10 @@ pub enum TextSubCommand {
     Verify(TextVerifyOpts),
     #[command(about = "Generate a random blake3 key or ed25519 key pair")]
     Generate(KeyGenerateOpts),
+    #[command(about = "Encrypt a text with a public/session key")]
+    Encrypt(EncryptOpts),
+    #[command(about = "Decrypt a text with a public/session key")]
+    Decrypt(DecryptOpts),
 }
 
 #[derive(Debug, Parser)]
@@ -49,6 +53,24 @@ pub struct KeyGenerateOpts {
     pub format: TextSignFormat,
     #[arg(short, long, value_parser = parse_path)]
     pub output_path: PathBuf,
+}
+
+#[derive(Debug, Parser)]
+pub struct EncryptOpts {
+    #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
+    pub input: String,
+    #[arg(short, long, value_parser = parse_input_file)]
+    pub key: String,
+}
+
+#[derive(Debug, Parser)]
+pub struct DecryptOpts {
+    #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
+    pub input: String,
+    #[arg(short, long, value_parser = parse_input_file)]
+    pub key: String,
+    #[arg(short, long, value_parser = parse_input_file)]
+    pub nonce: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -121,6 +143,27 @@ impl CmdExecutor for KeyGenerateOpts {
         for (k, v) in key {
             fs::write(self.output_path.join(k), v).await?;
         }
+        Ok(())
+    }
+}
+
+impl CmdExecutor for EncryptOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let encrypted = process_text_encrypt(&mut reader, &key).await?;
+        println!("encrypted: {}", encrypted);
+        Ok(())
+    }
+}
+
+impl CmdExecutor for DecryptOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let nonce = get_content(&self.nonce)?;
+        let decrypted = process_text_decrypt(&mut reader, &key, &nonce)?;
+        println!("decrypted: {}", decrypted);
         Ok(())
     }
 }

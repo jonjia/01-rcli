@@ -1,8 +1,13 @@
 use crate::{process_gen_pass, TextSignFormat};
 use anyhow::Result;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use chacha20poly1305::{
+    aead::{generic_array::GenericArray, Aead, AeadCore, KeyInit, OsRng},
+    XChaCha20Poly1305,
+};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use rand::rngs::OsRng;
-use std::{collections::HashMap, io::Read};
+use std::{collections::HashMap, io::Read, path::Path};
+use tokio::fs;
 
 pub trait TextSigner {
     // signer could sign any input data
@@ -149,6 +154,47 @@ pub fn process_text_key_generate(format: TextSignFormat) -> Result<HashMap<&'sta
     }
 }
 
+pub async fn process_text_encrypt(reader: &mut dyn Read, key: &[u8]) -> Result<String> {
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf)?;
+    let key = GenericArray::clone_from_slice(&key[..32]);
+    let cipher = XChaCha20Poly1305::new(&key);
+    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng); // 192-bits; unique per message
+    let ciphertext = cipher.encrypt(&nonce, buf.as_ref())?;
+    let nonce_str = URL_SAFE_NO_PAD.encode(nonce);
+    fs::write(Path::new("fixtures").join("nonce.txt"), &nonce_str).await?;
+    println!("nonce: {:?}", nonce_str);
+    let encrypted = URL_SAFE_NO_PAD.encode(ciphertext);
+
+    Ok(encrypted)
+}
+
+pub fn process_text_decrypt(reader: &mut dyn Read, key: &[u8], nonce: &[u8]) -> Result<String> {
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf)?;
+    // avoid accidental newlines
+    let buf = buf.trim();
+    println!("buf: {:?}", buf);
+    let key = GenericArray::clone_from_slice(&key[..32]);
+    let cipher = XChaCha20Poly1305::new(&key);
+    let nonce_decode = URL_SAFE_NO_PAD.decode(nonce)?;
+    let nonce = GenericArray::from_slice(&nonce_decode[..]);
+    let decoded_buf = URL_SAFE_NO_PAD.decode(buf)?;
+
+    match cipher.decrypt(nonce, decoded_buf.as_ref()) {
+        Ok(plaintext) => {
+            // 使用解密后的数据
+            let s = String::from_utf8(plaintext)?;
+            println!("plaintext: {:?}", s);
+            Ok(s)
+        }
+        Err(e) => {
+            println!("Failed to decrypt data: {}", e);
+            Err(e.into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +221,24 @@ mod tests {
         let sig = URL_SAFE_NO_PAD.decode(sig)?;
         let ret = process_text_verify(&mut reader, KEY, &sig, format)?;
         assert!(ret);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_process_encrypt() -> Result<()> {
+        let mut reader = "hello".as_bytes();
+        process_text_encrypt(&mut reader, KEY).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_process_decrypt() -> Result<()> {
+        let mut reader = "hello".as_bytes();
+        let ciphertext = process_text_encrypt(&mut reader, KEY).await?;
+        let nonce = fs::read(Path::new("fixtures").join("nonce.txt")).await?;
+        let mut reader1 = ciphertext.as_bytes();
+        let plaintext = process_text_decrypt(&mut reader1, KEY, nonce.as_slice())?;
+        assert_eq!(plaintext, "hello");
         Ok(())
     }
 }
