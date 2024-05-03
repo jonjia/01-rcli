@@ -1,36 +1,33 @@
-use core::fmt;
-use std::{fs, path::PathBuf, str::FromStr};
-
-use anyhow::Ok;
-use clap::Parser;
-use enum_dispatch::enum_dispatch;
-
-use crate::{process_generate, process_sign, process_verify, CmdExecutor};
+use crate::{
+    get_content, get_reader, process_text_key_generate, process_text_sign, process_text_verify,
+    CmdExecutor,
+};
 
 use super::{parse_input_file, parse_path};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use clap::Parser;
+use enum_dispatch::enum_dispatch;
+use std::{fmt, path::PathBuf, str::FromStr};
+use tokio::fs;
 
 #[derive(Debug, Parser)]
 #[enum_dispatch(CmdExecutor)]
 pub enum TextSubCommand {
-    #[command(about = "Sign a message with a private/public key")]
+    #[command(about = "Sign a text with a private/session key and return a signature")]
     Sign(TextSignOpts),
-
-    #[command(about = "Verify a signed message")]
+    #[command(about = "Verify a signature with a public/session key")]
     Verify(TextVerifyOpts),
-
-    #[command(about = "Generate a new key")]
-    Generate(TextKeyGenerateOpts),
+    #[command(about = "Generate a random blake3 key or ed25519 key pair")]
+    Generate(KeyGenerateOpts),
 }
 
 #[derive(Debug, Parser)]
 pub struct TextSignOpts {
     #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
     pub input: String,
-
     #[arg(short, long, value_parser = parse_input_file)]
     pub key: String,
-
-    #[arg(long, value_parser = parse_format, default_value = "blake3")]
+    #[arg(long, default_value = "blake3", value_parser = parse_text_sign_format)]
     pub format: TextSignFormat,
 }
 
@@ -38,24 +35,20 @@ pub struct TextSignOpts {
 pub struct TextVerifyOpts {
     #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
     pub input: String,
-
     #[arg(short, long, value_parser = parse_input_file)]
     pub key: String,
-
     #[arg(long)]
-    pub signature: String,
-
-    #[arg(long, value_parser = parse_format, default_value = "blake3")]
+    pub sig: String,
+    #[arg(long, default_value = "blake3", value_parser = parse_text_sign_format)]
     pub format: TextSignFormat,
 }
 
 #[derive(Debug, Parser)]
-pub struct TextKeyGenerateOpts {
-    #[arg(short, long, value_parser = parse_format, default_value = "blake3")]
+pub struct KeyGenerateOpts {
+    #[arg(long, default_value = "blake3", value_parser = parse_text_sign_format)]
     pub format: TextSignFormat,
-
     #[arg(short, long, value_parser = parse_path)]
-    pub output: PathBuf,
+    pub output_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -64,7 +57,7 @@ pub enum TextSignFormat {
     Ed25519,
 }
 
-fn parse_format(format: &str) -> Result<TextSignFormat, anyhow::Error> {
+fn parse_text_sign_format(format: &str) -> Result<TextSignFormat, anyhow::Error> {
     format.parse()
 }
 
@@ -75,12 +68,12 @@ impl FromStr for TextSignFormat {
         match s {
             "blake3" => Ok(TextSignFormat::Blake3),
             "ed25519" => Ok(TextSignFormat::Ed25519),
-            _ => Err(anyhow::anyhow!("Invalid base64 format")),
+            _ => Err(anyhow::anyhow!("Invalid format")),
         }
     }
 }
 
-impl From<TextSignFormat> for &str {
+impl From<TextSignFormat> for &'static str {
     fn from(format: TextSignFormat) -> Self {
         match format {
             TextSignFormat::Blake3 => "blake3",
@@ -97,35 +90,37 @@ impl fmt::Display for TextSignFormat {
 
 impl CmdExecutor for TextSignOpts {
     async fn execute(self) -> anyhow::Result<()> {
-        let signed = process_sign(&self.input, &self.key, self.format)?;
-        println!("{}", signed);
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let sig = process_text_sign(&mut reader, &key, self.format)?;
+        // base64 output
+        let encoded = URL_SAFE_NO_PAD.encode(sig);
+        println!("{}", encoded);
         Ok(())
     }
 }
 
 impl CmdExecutor for TextVerifyOpts {
     async fn execute(self) -> anyhow::Result<()> {
-        let verified = process_verify(&self.input, &self.key, &self.signature, self.format)?;
-        println!("{}", verified);
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let decoded = URL_SAFE_NO_PAD.decode(&self.sig)?;
+        let verified = process_text_verify(&mut reader, &key, &decoded, self.format)?;
+        if verified {
+            println!("✓ Signature verified");
+        } else {
+            println!("⚠ Signature not verified");
+        }
         Ok(())
     }
 }
 
-impl CmdExecutor for TextKeyGenerateOpts {
+impl CmdExecutor for KeyGenerateOpts {
     async fn execute(self) -> anyhow::Result<()> {
-        let key = process_generate(self.format)?;
-        match self.format {
-            TextSignFormat::Blake3 => {
-                let name = self.output.join("blake3.txt");
-                let _ = fs::write(name, &key[0]);
-                Ok(())
-            }
-            TextSignFormat::Ed25519 => {
-                let name = &self.output;
-                fs::write(name.join("ed25519.sk"), &key[0])?;
-                fs::write(name.join("ed25519.pk"), &key[1])?;
-                Ok(())
-            }
+        let key = process_text_key_generate(self.format)?;
+        for (k, v) in key {
+            fs::write(self.output_path.join(k), v).await?;
         }
+        Ok(())
     }
 }

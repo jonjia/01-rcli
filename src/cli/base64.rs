@@ -1,20 +1,18 @@
-use core::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use clap::Parser;
 use enum_dispatch::enum_dispatch;
 
-use crate::{process_decode, process_encode, CmdExecutor};
+use crate::{get_reader, process_decode, process_encode, CmdExecutor};
 
 use super::parse_input_file;
 
 #[derive(Debug, Parser)]
 #[enum_dispatch(CmdExecutor)]
 pub enum Base64SubCommand {
-    #[command(name = "encode", about = "Encode base64 string")]
+    #[command(name = "encode", about = "Encode a string to base64")]
     Encode(Base64EncodeOpts),
-
-    #[command(name = "decode", about = "Decode base64 string")]
+    #[command(name = "decode", about = "Decode a base64 string")]
     Decode(Base64DecodeOpts),
 }
 
@@ -22,7 +20,6 @@ pub enum Base64SubCommand {
 pub struct Base64EncodeOpts {
     #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
     pub input: String,
-
     #[arg(long, value_parser = parse_base64_format, default_value = "standard")]
     pub format: Base64Format,
 }
@@ -31,7 +28,6 @@ pub struct Base64EncodeOpts {
 pub struct Base64DecodeOpts {
     #[arg(short, long, value_parser = parse_input_file, default_value = "-")]
     pub input: String,
-
     #[arg(long, value_parser = parse_base64_format, default_value = "standard")]
     pub format: Base64Format,
 }
@@ -53,12 +49,12 @@ impl FromStr for Base64Format {
         match s {
             "standard" => Ok(Base64Format::Standard),
             "urlsafe" => Ok(Base64Format::UrlSafe),
-            _ => Err(anyhow::anyhow!("Invalid base64 format")),
+            _ => Err(anyhow::anyhow!("Invalid format")),
         }
     }
 }
 
-impl From<Base64Format> for &str {
+impl From<Base64Format> for &'static str {
     fn from(format: Base64Format) -> Self {
         match format {
             Base64Format::Standard => "standard",
@@ -75,17 +71,18 @@ impl fmt::Display for Base64Format {
 
 impl CmdExecutor for Base64EncodeOpts {
     async fn execute(self) -> anyhow::Result<()> {
-        let encoded = process_encode(&self.input, self.format)?;
-        println!("{}", encoded);
+        let mut reader = get_reader(&self.input)?;
+        let ret = process_encode(&mut reader, self.format)?;
+        println!("{}", ret);
         Ok(())
     }
 }
 
 impl CmdExecutor for Base64DecodeOpts {
     async fn execute(self) -> anyhow::Result<()> {
-        let decoded = process_decode(&self.input, self.format)?;
-        let decoded = String::from_utf8(decoded)?;
-        println!("{}", decoded);
+        let mut reader = get_reader(&self.input)?;
+        let ret = process_decode(&mut reader, self.format)?;
+        println!("{}", ret);
         Ok(())
     }
 }
